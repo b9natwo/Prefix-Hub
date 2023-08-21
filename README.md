@@ -8,3 +8,4 @@ You're free to use this source code as long as credit is given. This whole proje
 Inside of Prefix Hub.py, you'll see a note "Variables Needed For Change", under this you'll find what's needed to change. Change those values to your values, especially the token. Now, run it through Replit or on your computer. After this, you should be good to go!
 
 # Note
+Thank you guys for taking your time to read all of this. I hope you guys create cool projects with this, as all of this may be confusing, I also hope you learn a couple things.
