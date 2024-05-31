@@ -1,308 +1,247 @@
+
 import discord
-import asyncio
+import feedparser
 import requests
-from discord.ext import commands
+import asyncio
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-import datetime
-import pytz
-import os
-import json
-import random
+from datetime import datetime
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+# Discord bot token
+TOKEN = ""
 
-# Variables Needed For Change
+# RSS feed URL (after authentication)
+RSS_FEED_URL = 'https://leaked.cx/forums/hiphopleaks.rss'
 
-leaks_channel_id = None # Where the bot will send the leaks
-error_channel_id = None # Insert a Channel Id for the bot to send errors to (in case something goes wrong)
-Email = None # For Login Purposes
-Password = None # For Login Purposes
-TOKEN = None # Discord Bot Token
+# Forum page ID
+PAGE_ID  = 0
 
-leak_channels_guilds = {}
+# How long it takes before it reads the feed again
+sleepInterval = 5
 
-def login_to_website(email, password):
-    # Set up Selenium WebDriver with appropriate options
-    options = Options()
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('-headless')
-    driver = webdriver.Firefox(options=options)
+# Discord channel ID where you want to send the feed updates
+CHANNEL_ID = ''
 
-    # Load the login page and fill in the credentials
-    driver.get("https://leaked.cx/login")
-    driver.find_element(By.NAME, "login").send_keys(email)
-    driver.find_element(By.NAME, "password").send_keys(password)
-    driver.find_element(By.XPATH, "/html/body/div[2]/div/div[4]/div/div/div/div/div/div/form/div[1]/dl/dd/div/div[2]/button/span").click()
-    # Wait for the login process to complete
-    driver.implicitly_wait(10)
-    return driver
+# Credentials for website authentication
+USERNAME = ''
+PASSWORD = ''
 
-async def scrape_leaks():
-    global error_channel
+# Which forums the bot will scrape
+pages = ['https://leaked.cx/forums/hiphopleaks', 'https://leaked.cx/forums/othergenreleaks', 'https://leaked.cx/forums/othermedialeaks']
+pages_rss = ['https://leaked.cx/forums/hiphopleaks.rss', 'https://leaked.cx/forums/othergenreleaks.rss', 'https://leaked.cx/forums/othermedialeaks.rss']
 
-    try: # All Leaks
-                # Log into the website
-        driver = login_to_website(f"{Email}", f"{Password}")
+# Artist role pings
+artist_roles = {
+    "juice wrld": {"role": "", "thumbnail": "https://wallpapers-clan.com/wp-content/uploads/2022/08/juice-wrld-pfp-15.jpg"},
+    "lil uzi vert": {"role": "", "thumbnail": "https://i.pinimg.com/originals/d9/8e/29/d98e29caddd7b5f5947d1d271dc0a5b4.jpg"},
+    "kanye west": {"role": "", "thumbnail": "https://lh3.googleusercontent.com/xfezNwf-YBEBvGGyWWb9vPDZR4407F_nEK7tBuKdLMTwA6xN95VBSeNF6RQojix5-CTKdm8pjEYVwHaZiMXd0o9cNJ8Zdr6k"},
+    "future": {"role": "", "thumbnail": "https://i.ibb.co/vhJc9jY/b00fd08be2f9459ec5b2f1875ed9a02a.jpg"},
+    "travis scott": {"role": "", "thumbnail": "https://steamuserimages-a.akamaihd.net/ugc/782985908102502358/2157D7CBA0ABB6D5E5EE9C222B8A0FBFEBC07B7E/?imw=512&&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false"},
+    "the weeknd": {"role": "", "thumbnail": "https://media.pitchfork.com/photos/5e3d7b57159e01000820beb9/1:1/w_512,h_512,c_limit/The-Weeknd.JPG"},
+    "playboi carti": {"role": "", "thumbnail": "https://wallpapers-clan.com/wp-content/uploads/2022/07/playboi-carti-pfp-5.jpg"},
+    "gunna": {"role": "", "thumbnail": "https://firebase.soulectiontracklists.com/cdn/image//t_square_extra_large/images/artists/blaccmass/tracks/gunna-world-is-yours.jpg"},
+    "yeat": {"role": "", "thumbnail": "https://media.plus.rtl.de/music-deezer/artist/de332e65dc6029438aaea754888b2786/512x512-000000-80-0-0.jpg?tr=f-auto,w-512"},
+    "trippie redd": {"role": "", "thumbnail": "https://i.pinimg.com/564x/e1/59/fc/e159fc0dd363debd6db7033b4ae098d9.jpg"},
+    "ken carson": {"role": "", "thumbnail": "https://kansascity.events/wp-content/uploads/2024/04/ken-carson.jpg"},
+    "drake": {"role": "", "thumbnail": "https://s11279.pcdn.co/wp-content/uploads/2020/04/toosie.png"},
+    "lil wayne": {"role": "", "thumbnail": "https://www.appahang2.com/cdn/artists-avatar/1402/12/5712170926874196181709268741683017092687418771.webp"},
+    "tory lanez": {"role": "", "thumbnail": "https://i.pinimg.com/736x/60/15/b8/6015b8c284b22046839d0a3e98266768.jpg"},
+    "young thug": {"role": "", "thumbnail": "https://i.scdn.co/image/ab6761610000e5eb547d2b41c9f2c97318aad0ed"},
+    "mac miller": {"role": "", "thumbnail": "https://scontent.cdninstagram.com/v/t51.29350-15/426230978_1330956550825521_4083831995184637062_n.jpg?stp=dst-jpg_e35&efg=eyJ2ZW5jb2RlX3RhZyI6ImltYWdlX3VybGdlbi44MTN4ODAwLnNkci5mMjkzNTAifQ&_nc_ht=scontent.cdninstagram.com&_nc_cat=109&_nc_ohc=b0cFck5r-z4Q7kNvgHs36Wc&edm=APs17CUBAAAA&ccb=7-5&ig_cache_key=MzI5OTA1MzYzMjY2MTE5NjUwNA%3D%3D.2-ccb7-5&oh=00_AYCDwFGfefdeckwi8KDfL5KlC7v-YnFr4FgWogY_OAo4EQ&oe=665EE34F&_nc_sid=10d13b"},
+    "migos": {"role": "", "thumbnail": "https://play-lh.googleusercontent.com/cRiE4Sv3JJNNl6M69ZcB8i0zXhjIZGpoB_D8uFNrf7_8eVIUYTwHuQQdBe4-fBjuikg"},
+    "destroy lonely": {"role": "", "thumbnail": "https://d1dy244g59v5jo.cloudfront.net/artist-51/5146884dadc29d8c4090554a34e717453d6340e86fc86e047de7d497b325595cb3cb8d6e.jpg.512x512.jpg"},
+    "chief keef": {"role": "", "thumbnail": "https://steamuserimages-a.akamaihd.net/ugc/814499342665234483/977E1E00DCAF9A39EE1C1069AB49D3DEC9B4BFBA/?imw=512&&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false"},
+    "lil tecca": {"role": "", "thumbnail": "https://steamuserimages-a.akamaihd.net/ugc/1783967784602355345/C6EEACAE67CF68F7A64D2056CC6D7E31BBFDD01C/?imw=512&&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false"},
+    "charlie xcx": {"role": "", "thumbnail": "https://i.pinimg.com/originals/3d/62/dc/3d62dc9eb53e030cb4da7b40cada23a2.jpg"},
+    "camila cabello": {"role": "", "thumbnail": "https://media.plus.rtl.de/music-deezer/artist/4591e8a49868c2494652767f47695a90/512x512-000000-80-0-0.jpg?tr=f-auto,w-512"},
+    "dua lipa": {"role": "", "thumbnail": "https://milocostudios.com/wp-content/uploads/2020/05/unnamed.jpg"},
+    "ariana grande": {"role": "", "thumbnail": "https://i.ibb.co/W5wD7jn/img-pmg-512x512.webp"},
+    "justin bieber": {"role" : "", "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRg0cdqKLwJetSGQeJjsudtMWJeEfSP1Y3B8Q&s"}
+}
 
-        # Navigate to the Juice WRLD leaks section
-        driver.get("https://leaked.cx/forums/hiphopleaks/")
 
-        # Wait for the page to load
-        await asyncio.sleep(5)
+# Any unauthorized modification or tampering of the code below Line 270 for personal gain is strictly prohibited. 
+# Such actions will result in the filing of a Copyright strike to takedown your GitHub repository or Discord bot. 
+# We take intellectual property rights seriously and will enforce necessary measures to protect our work. Thank you for your understanding and cooperation.
 
-        # Scrape the page for new leaks
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        leaks = soup.find_all("div", class_="structItemContainer-group js-threadList")
+# This project took a while to get where it's at, so please respect my kindness.
 
-        # Iterate through the leaks and send Discord embed messages
-        for leak in leaks:
-            leak_title = leak.find("a", attrs = {"class" : ""}).text.strip()
-            leak_url = leak.find("a", attrs= {"class" : ""})["href"]
-            leak_datetime = leak.find("time", attrs={"class": "u-dt"}).text.strip()
-            leak_tag = leak.find("span", attrs={"dir": "auto"}).text.strip()
 
-            if leak_tag == "LEAK":
-                leak_title = leak.find("a", attrs = {"class" : ""}).text.strip() + " [LEAK]"
 
-            if leak_tag == "EARLY":
-                leak_title = leak.find("a", attrs = {"class" : ""}).text.strip() + " [EARLY]"
+#                  ____  ____  _____ _____ _____  __       _   _ _   _ ____  
+#                 |  _ \|  _ \| ____|  ___|_ _\ \/ /      | | | | | | | __ ) 
+#                 | |_) | |_) |  _| | |_   | | \  /       | |_| | | | |  _ \ 
+#                 |  __/|  _ <| |___|  _|  | | /  \       |  _  | |_| | |_) |
+#                 |_|   |_| \_\_____|_|   |___/_/\_\      |_| |_|\___/|____/ 
+#                                                                       @b9na
 
-            if leak_tag == "SNIPPET":
-                leak_title = leak.find("a", attrs = {"class" : ""}).text.strip() + " [SNIPPET]"
 
-            if leak_tag == "DEMO":
-                leak_title = leak.find("a", attrs = {"class" : ""}).text.strip() + " [DEMO]"
 
-            if leak_tag == "OLD LEAK":
-                leak_title = leak.find("a", attrs = {"class" : ""}).text.strip() + " [OLD LEAK]"
 
-            # Check if the leak has already been sent
-            if not is_duplicate(leak_title):
-                # Get a random Juice WRLD image online as the thumbnail
-                thumbnail_url = None
 
-                role_id = " "
+client = discord.Client(intents=discord.Intents.all())
 
-                get_section = leak.find("div", attrs={"class":"structItem-title"})
+def extract_csrf_token(html_content):
+    # Parse the HTML content
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Find the CSRF token input field
+    csrf_input = soup.find('input', {'name': '_xfToken'})
+    
+    # Extract the value of the CSRF token
+    if csrf_input:
+        csrf_token = csrf_input.get('value')
+        return csrf_token
+    else:
+        print('CSRF token not found')
+        return None
 
-                get_tags = get_section.find_all("span", attrs={"dir":"auto"})
+async def authenticate():
+    session = requests.Session()
+    
+    # Perform initial request to get CSRF token and cookies
+    login_page_response = session.get('https://leaked.cx/login/')
+    
+    # Extract CSRF token from the response HTML
+    csrf_token = extract_csrf_token(login_page_response.text)
+    
+    # Construct login data with CSRF token and other required parameters
+    login_data = {
+        'login': USERNAME,
+        'password': PASSWORD,
+        'remember': 'on',
+        '_xfRedirect': '',
+        '_xfToken': csrf_token,
+        '_xfResponseType': 'json'
+    }
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+        'Referer': 'https://leaked.cx/login/',
+        'Origin': 'https://leaked.cx'
+    }
+    
+    # Send login request with constructed data and headers
+    login_response = session.post('https://leaked.cx/login/login', data=login_data, headers=headers)
+    
+    # Check if login was successful
+    if login_response.status_code == 200:
+        print('Authentication successful')
+        return session
+    else:
+        print('Authentication failed')
+        return None
 
-                for tag in get_tags:
-                    k = tag.get_text()
-                    if k == "JUICE WRLD":
-                        role_id = None # Juice Role (For Pinging Purposes)
-                        thumbnail_url = get_random_juice_wrld_image()
-                    if k == "LIL UZI VERT":
-                        role_id = None # Uzi Role (For Pinging Purposes)
-                        thumbnail_url = get_random_lil_uzi_vert_image()
-                    if k == "KANYE WEST":
-                        role_id = None # Kanye Role (For Pinging Purposes)
-                        thumbnail_url = get_random_kanye_west_image()
-                    if k == "TRAVIS SCOTT":
-                        thumbnail_url = get_random_travis_scott_image()
-                        role_id = None # Travis Role (For Pinging Purposes)
-                    if k == "THE WEEKND":
-                        role_id = None # Weeknd Role (For Pinging Purposes)
-                        thumbnail_url = get_random_the_weeknd_image()
-                    if k == "PLAYBOI CARTI":
-                        role_id = None # Carti Role (For Pinging Purposes)
-                        thumbnail_url = get_random_playboi_carti_image()
-                    if k == "DRAKE":
-                        role_id = None # Drake Role (For Pinging Purposes)
-                        thumbnail_url = get_random_drake_image()
-                    if k == "LIL WAYNE":
-                        thumbnail_url = get_random_lil_wayne_image()
-                        role_id = None # Wayne Role (For Pinging Purposes)
-                    if k == "YOUNG THUG":
-                        thumbnail_url = get_random_young_thug_image()
-                        role_id = None # Thug Role (For Pinging Purposes)
-                    if k == "MAC MILLER":
-                        thumbnail_url = get_random_mac_miller_image()
-                        role_id = None # Mac Miller Role (For Pinging Purposes)
-                    if k == "MIGOS":
-                        thumbnail_url = get_random_migos_image()
-                        role_id = None # Migos Role (For Pinging Purposes)
+async def fetch_feed_data(session):
+    global PAGE_ID
+    
+    # If statement for PAGEID overflow
+    if int(PAGE_ID) >= 3:
+        PAGE_ID = 0
+    
+    # Download RSS feed content using the authenticated session
+    rss_response = session.get(pages_rss[PAGE_ID])
+    forum = session.get(pages[PAGE_ID])
+    
+    print(f"Searching through: {pages[PAGE_ID]}")
+    
+    if rss_response.status_code == 200 and forum.status_code == 200:
+        # Parse the downloaded content using feedparser
+        PAGE_ID += 1
+        feed = feedparser.parse(rss_response.text)
+        return feed, forum.content
+    else:
+        print(f"Failed to fetch RSS feed: {rss_response.status_code}")
+        return None
 
-                    if "Yeat" in leak_title: # FOR CUSTOM PREFIX PURPOSES, THIS IS WHAT YOU'LL HAVE TO PUT.
-                        role_id = None # Yeat Role (For Pinging Purposes)
-                        thumbnail_url = get_random_yeat_image()
+async def send_feed_updates():
+    session = await authenticate()
+    THREAD_NAME = ""
+    if session is None:
+        return
+    
+    await client.wait_until_ready()
+    channel = client.get_channel(int(CHANNEL_ID))
+    
+    while not client.is_closed():
+        try:
+            feed, forum = await fetch_feed_data(session)
+            
+            # Extracting data from the feed
+            for entry in feed.entries:
+                test = BeautifulSoup(forum, 'html.parser')
 
-                channel = bot.get_channel(leaks_channel_id)
-
-                embed = discord.Embed(title=leak_title, url=f"https://leaked.cx{leak_url}", color=discord.Color.random())
-                embed.set_thumbnail(url=thumbnail_url)
-                embed.set_footer(text=f"Leaked | {leak_datetime}")
+                mainDiv = test.find('div', attrs={"class":"structItemContainer-group js-threadList"})
+                time = mainDiv.find("time").text.strip()
                 
-                # Send the embed message to the specified channel
-                if role_id == " ":
-                    print("No Role")
-                else:
-                    await channel.send(f"<@&{role_id}>")
-                await channel.send(embed=embed)
-                # Store the sent leak to avoid duplicates
-                store_leak(leak_title)
+                term = entry.tags[0].term
+                title = entry.title
+                link = entry.link
+                author = entry.author
+                thumbnail = "https://leaked.cx/data/assets/logo/square192cx.png"
+                    
+                titleDiv = mainDiv.find("div", attrs={"class":"structItem-title"})
+                    
+                embed = discord.Embed(title=title.upper(), url=link, color=discord.Color.random())
+                embed.set_footer(text=f"{term} | {time}")
+                embed.set_thumbnail(url=thumbnail)
+                    
+                # Sending feed updates to the Discord channel
 
-        # Close the Selenium WebDriver
-        driver.quit()
+                artist = ""
+                
+                if title.lower() != THREAD_NAME.lower():
+                        THREAD_NAME = title
+                        labels = titleDiv.find_all("span")
+                        rolePing = ""
+                        for label in labels:
+                            label_text = label.text.strip().lower()
+                            if label_text in artist_roles:
+                                artist = label_text
+                            else:
+                                pass
 
-    except Exception as e:
-        # Send the error message to the error channel
-        if error_channel is not None:
-            await error_channel.send(f"An error occurred while scraping leaks: {str(e)}")
+                        if any(artist in title.lower() for artist in artist_roles) or artist != "":
+                            if artist == "":
+                                artist = next(artist for artist in artist_roles if artist in title.lower())
+                            else:
+                                pass
+                            thumbnail = artist_roles[artist]["thumbnail"]
+                            rolePing = artist_roles[artist]["role"]
+                            embed.set_thumbnail(url=thumbnail)
+                        
+                        # Sending Embed
+                        #if "A moment ago" in time:
+                        print(f'"{title}" was just posted by {author} [SUCCESS]')
+                        if "A moment ago" in time:
+                            if rolePing != "":
+                                THREAD_NAME = title
+                                await channel.send(f"<@&{rolePing}>", embed=embed)
+                            else:
+                                await channel.send(embed=embed)
+                        break
+                break
 
-def is_duplicate(leak_title):
-    if os.path.exists("sent_leaks.json"):
-        with open("sent_leaks.json") as file:
-            sent_leaks = json.load(file)
-            return leak_title in sent_leaks
-    else:
-        return False
+                
+            # Sleep for an interval before fetching the feed again
+            await asyncio.sleep(sleepInterval)  # 15 second interval
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
-def store_leak(leak_title):
-    if os.path.exists("sent_leaks.json"):
-        with open("sent_leaks.json") as file:
-            sent_leaks = json.load(file)
-    else:
-        sent_leaks = []
-
-    sent_leaks.append(leak_title)
-
-    with open("sent_leaks.json", "w") as file:
-        json.dump(sent_leaks, file)
-
-def get_random_juice_wrld_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://t2.genius.com/unsafe/306x306/https%3A%2F%2Fimages.genius.com%2F42b0e9b115b685c8dd7e7f32e3f1ce9c.999x999x1.jpg"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-def get_random_kanye_west_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/df2a9086c5f50a8615a4117513552f09.731x731x1.jpg"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-def get_random_lil_uzi_vert_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/9cda5b801691bcd6559ab79ddf9c2925.1000x1000x1.jpg"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-
-def get_random_travis_scott_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/5d19fecdb3828ca9ec89dda588e2eb7d.1000x1000x1.jpg"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-def get_random_the_weeknd_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/1bab7f9dbd1216febc16d73ae4da9bd0.1000x1000x1.jpg"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-def get_random_playboi_carti_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/988f153044ac8570914c1b42917d0db6.603x603x1.png"
-        # Add more image URLs as needed
-    ]
-    return random.choice(image_urls)
-
-def get_random_drake_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/7dbc2190892ad991a1abdd33c65990b6.623x623x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-def get_random_lil_wayne_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/aa8b9dce2492fe413c23f77b643788fd.914x914x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-def get_random_young_thug_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/4def6a8201847b0a918f2b12e4334725.760x760x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-def get_random_mac_miller_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/904f5ed20e5f3bbf5391f178c55c3d01.700x700x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-def get_random_yeat_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://t2.genius.com/unsafe/340x340/https%3A%2F%2Fimages.genius.com%2F29e0cc0219f861c08132e9eaf4ec31de.640x640x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-
-def get_random_migos_image():
-    # Implement code to fetch a random image of Juice WRLD from an online source
-    # Example:
-    image_urls = [
-        "https://images.genius.com/7fbac3bee19b97a9b5b2805512da490a.640x640x1.jpg"
-        # Add more image URLS as needed
-    ]
-
-    return random.choice(image_urls)
-
-
-@bot.event
+@client.event
 async def on_ready():
-    global error_channel
-    error_channel = bot.get_channel(error_channel_id)
-    print("Bot is ready.")
-    await bot.change_presence(activity=discord.activity.Game(name="leaked.cx"))
+    print(f'Logged in as {client.user}')
+    # Starting the background task to send feed updates
+    await client.change_presence(activity=discord.activity.Game(name="Prefix Hub"))
+    client.loop.create_task(send_feed_updates())
 
-    # Schedule the leak scraping task to run every minute
-    while True:
-        await scrape_leaks()
-        await asyncio.sleep(10)
+@client.event
+async def on_message(message): # please support Prefix Hub
+    # Check if the bot was mentioned in the message
+    if client.user.mentioned_in(message) and message.mention_everyone is False:
+        embed = discord.Embed(title="Prefix Hub", description=f"I'm a Discord bot powered by Prefix Hub, developed by <@948060905831268353>", url="https://discord.com/invite/SqMfMfRZVm")
+        embed.set_thumbnail(url="https://i.ibb.co/68R6F17/Prefix-Hub.png")
+        embed.set_author(name="@b9na", url="https://github.com/b9natwo")
+        await message.channel.send(f"Hello {message.author.mention}", embed=embed)
 
-bot.run(TOKEN)
+# Running the bot
+client.run(TOKEN)
