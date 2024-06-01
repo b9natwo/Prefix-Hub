@@ -59,7 +59,7 @@ artist_roles = {
 }
 
 
-# Any unauthorized modification or tampering of the code below Line 270 for personal gain is strictly prohibited. 
+# Any unauthorized modification or tampering of the code below Line 237 for personal gain is strictly prohibited. 
 # Such actions will result in the filing of a Copyright strike to takedown your GitHub repository or Discord bot. 
 # We take intellectual property rights seriously and will enforce necessary measures to protect our work. Thank you for your understanding and cooperation.
 
