@@ -8,4 +8,5 @@ You're free to learn and use this code. If it's directly copied, please show som
 On the top of the Python file, there's a list of variables that need to be changed. (Such as: LEAKED password/username, Bot Token, Channel Id, Role Ids, etc.)
 Fill in the variables with the right credentials and the bot should work on it's own.
 
-`source: [LEAKED](https://leaked.cx)`
+# Source
+All content is from [LEAKED](https://leaked.cx). Beware of troll posts
