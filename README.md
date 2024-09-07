@@ -1,12 +1,11 @@
 # Prefix Hub
-Prefix Hub is a service that allows your Discord bot to retrieve recent forum posts on LEAKED.
+Prefix Hub is a Discord bot that allows users to stay updated on new music from their favorite artists.  
 
 # Copyright
-You're free to use this source code as long as credit is given. A lot of time was put into to this project.
+You're free to learn and use this code. If it's directly copied, please show some support by giving credit/linking any Prefix Hub material (Discord, GitHub, etc.)
 
-# How To Set It Up
-On the top of the Python file, there's a list of variables that need to be changed. (Such as: LEAKED password/username, Bot Token, Channel Id, Role Ids, etc.).
-Fill those in and your bot should be work just fine.
+# Guide
+On the top of the Python file, there's a list of variables that need to be changed. (Such as: LEAKED password/username, Bot Token, Channel Id, Role Ids, etc.)
+Fill in the variables with the right credentials and the bot should work on it's own.
 
-# Note
-I look forward to reviewing any big projects from this source code. Thank you for reading.
+`source: [LEAKED](https://leaked.cx)`
