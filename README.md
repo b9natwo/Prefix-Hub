@@ -1,5 +1,5 @@
 # Prefix Hub
-Prefix Hub is a Discord bot that allows users to stay updated on new music from their favorite artists.  
+Prefix Hub is a Discord bot that allows users to stay updated on new music from their favorite artists by actively reading RSS feeds.
 
 # Copyright
 You're free to learn and use this code. If it's directly copied, please show some support by giving credit/linking any Prefix Hub material (Discord, GitHub, etc.)
